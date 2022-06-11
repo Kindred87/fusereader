@@ -10,10 +10,15 @@ const (
 	headerInformationProviderName = "Information Provider Name"
 	headerItemType                = "Item Type"
 	headerItemID                  = "Item ID"
+	headerNewGroupIndicator       = "Indicator for New Group"
 )
 
 var (
 	headerIndexCache map[string]map[string]int
+)
+
+const (
+	headerRowMax = 5 // headerRowMax describes the maximum number of rows by which the header row should have been found.
 )
 
 func cacheHeaders(file string, headers []string) {
@@ -81,4 +86,21 @@ func headerRowPrefix() []string {
 	out = append(out, headerItemID)
 
 	return out
+}
+
+// headerGroupIndices returns a map of the given headers and the beginning index for the group/s they belong to.
+func headerGroupIndices(headers []string) (map[string][]int, error) {
+	indices := make(map[string][]int)
+
+	groupRoot := 1
+
+	for i, header := range headers {
+		if header == headerNewGroupIndicator {
+			groupRoot = i + 1
+		}
+
+		indices[header] = append(indices[header], groupRoot)
+	}
+
+	return indices, nil
 }
