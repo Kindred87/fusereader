@@ -1,6 +1,7 @@
 package fusereader
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,4 +50,23 @@ func Test_itemLocation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetFields(t *testing.T) {
+	find := FieldSpecification{
+		Headers:           []string{headerItemID},
+		InGroupContaining: []string{headerItemID},
+		Match:             func(s string) bool { return s == "00011110603081" },
+	}
+
+	retrieve := FieldSpecification{
+		Headers:           []string{"Allergen Type Code"},
+		InGroupContaining: []string{"Level of Containment"},
+		Match:             func(s string) bool { return strings.Contains(s, "Soybean") },
+	}
+
+	c := make(chan Field, 10)
+
+	err := GetFields([]string{fuseTestFiles[0]}, []FieldSpecification{find}, []FieldSpecification{retrieve}, c)
+	assert.Nil(t, err)
 }
