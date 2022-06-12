@@ -1,7 +1,6 @@
 package fusereader
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,41 +35,10 @@ func Test_headerRowPrefix(t *testing.T) {
 	assert.NotEmpty(t, prefix)
 }
 
-func headersFrom(file string) ([]string, error) {
-	fi, err := excelize.OpenFile(file)
-	if err != nil {
-		return nil, fmt.Errorf("error while opening %s: %w", file, err)
-	}
-	defer fi.Close()
-
-	rows, err := fi.Rows(worksheetFSItem)
-	if err != nil {
-		return nil, fmt.Errorf("error while initializing row iterator for %s in %s: %w", worksheetFSItem, file, err)
-	}
-
-	currRow := 0
-	for rows.Next() {
-		currRow++
-
-		if currRow >= headerRowMax {
-			return nil, fmt.Errorf("could not locate header row within first %d rows in %s", headerRowMax, file)
-		}
-
-		r, err := rows.Columns()
-		if err != nil {
-			return nil, fmt.Errorf("error while reading row %d in %s: %w", currRow, file, err)
-		}
-
-		if isHeaderRow(r) {
-			return r, nil
-		}
-	}
-
-	return nil, fmt.Errorf("could not locate header row in %s", file)
-}
-
 func Test_headerGroupIndices(t *testing.T) {
-	h, err := headersFrom(fuseTestFiles[0])
+	fi, err := excelize.OpenFile(fuseTestFiles[0])
+	assert.Nil(t, err)
+	h, err := headersFrom(fi)
 	assert.Nil(t, err)
 
 	headerGroups, err := headerGroupIndices(h)
@@ -99,5 +67,72 @@ func Test_headerGroupIndices(t *testing.T) {
 			}
 		}
 	}
+}
 
+func Test_headerIndex(t *testing.T) {
+	fi, err := excelize.OpenFile(fuseTestFiles[0])
+	assert.Nil(t, err)
+	h, err := headersFrom(fi)
+	assert.Nil(t, err)
+
+	type args struct {
+		headerRow           []string
+		keyHeader           string
+		otherHeadersInGroup []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    int
+		wantErr bool
+	}{
+		{name: "Width", args: args{headerRow: h, keyHeader: "Width", otherHeadersInGroup: []string{"Trade Item Composition Width UOM"}}, want: 1363, wantErr: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := headerIndex(tt.args.headerRow, tt.args.keyHeader, tt.args.otherHeadersInGroup)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("headerIndex() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("headerIndex() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_headerGroupRootIndex(t *testing.T) {
+	fi, err := excelize.OpenFile(fuseTestFiles[0])
+	assert.Nil(t, err)
+	h, err := headersFrom(fi)
+	assert.Nil(t, err)
+
+	headerIndices, err := headerGroupIndices(h)
+	assert.Nil(t, err)
+
+	type args struct {
+		groupIndices   map[string][]int
+		headersInGroup []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    int
+		wantErr bool
+	}{
+		{name: "Width", args: args{groupIndices: headerIndices, headersInGroup: []string{"Width", "Trade Item Composition Width UOM"}}, want: 1335, wantErr: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := headerGroupRootIndex(tt.args.groupIndices, tt.args.headersInGroup)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("headerGroupRootIndex() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("headerGroupRootIndex() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

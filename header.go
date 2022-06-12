@@ -1,5 +1,12 @@
 package fusereader
 
+import (
+	"fmt"
+	"path/filepath"
+
+	"github.com/xuri/excelize/v2"
+)
+
 // header keys
 
 const (
@@ -33,7 +40,7 @@ func cacheHeaders(file string, headers []string) {
 	}
 }
 
-func headerIndex(needle string, haystack []string) (int, bool) {
+func indexForHeader(needle string, haystack []string) (int, bool) {
 	for i, header := range haystack {
 		if header == needle {
 			return i, true
@@ -88,6 +95,34 @@ func headerRowPrefix() []string {
 	return out
 }
 
+// headersFrom returns the contents of the header row in the given file.
+func headersFrom(file *excelize.File) ([]string, error) {
+	rows, err := file.Rows(worksheetFSItem)
+	if err != nil {
+		return nil, fmt.Errorf("error while initiating row iterator for %s: %w", filepath.Base(file.Path), err)
+	}
+
+	currRow := 0
+	for rows.Next() {
+		currRow++
+
+		if currRow >= headerRowMax {
+			return nil, fmt.Errorf("could not locate header row in %s", filepath.Base(file.Path))
+		}
+
+		r, err := rows.Columns()
+		if err != nil {
+			return nil, fmt.Errorf("error while reading row %d in %s: %w", currRow, filepath.Base(file.Path), err)
+		}
+
+		if isHeaderRow(r) {
+			return r, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not locate header row in %s", filepath.Base(file.Path))
+}
+
 // headerGroupIndices returns a map of the given headers and the beginning index for the group/s they belong to.
 func headerGroupIndices(headers []string) (map[string][]int, error) {
 	indices := make(map[string][]int)
@@ -96,11 +131,71 @@ func headerGroupIndices(headers []string) (map[string][]int, error) {
 
 	for i, header := range headers {
 		if header == headerNewGroupIndicator {
-			groupRoot = i + 1
+			groupRoot = i
 		}
 
 		indices[header] = append(indices[header], groupRoot)
 	}
 
 	return indices, nil
+}
+
+// headerGroupIndex returns the zero-based index of the given key header.
+func headerIndex(headerRow []string, keyHeader string, otherHeadersInGroup []string) (int, error) {
+	groupIndices, err := headerGroupIndices(headerRow)
+	if err != nil {
+		return 0, fmt.Errorf("error while getting header group indices: %w", err)
+	}
+
+	root, err := headerGroupRootIndex(groupIndices, append(otherHeadersInGroup, keyHeader))
+	if err != nil {
+		return 0, fmt.Errorf("error while getting index of group root for %s and %#v: %w", keyHeader, otherHeadersInGroup, err)
+	}
+
+	for i := root; i < len(headerRow); i++ {
+		if headerRow[i] == keyHeader {
+			return i, nil
+		}
+	}
+
+	return 0, fmt.Errorf("unable to determine index for %s in group containing %#v", keyHeader, otherHeadersInGroup)
+}
+
+// headerGroupRootIndex returns the zero-based index of the root of the group containing the key header
+func headerGroupRootIndex(groupIndices map[string][]int, headersInGroup []string) (int, error) {
+	commonIndices := make(map[int]int)
+
+	for i, header := range headersInGroup {
+		indices, exist := groupIndices[header]
+		if !exist {
+			return 0, fmt.Errorf("could not locate %s among the given headers", header)
+		}
+
+		matched := false
+		if i == 0 {
+			matched = true
+		}
+
+		for _, index := range indices {
+			if _, exist := commonIndices[index]; exist {
+				matched = true
+			} else {
+				commonIndices[index] = 0
+			}
+
+			commonIndices[index]++
+		}
+
+		if !matched {
+			return 0, fmt.Errorf("could not find common group for %s and %#v", header, headersInGroup[:i])
+		}
+	}
+
+	for k, v := range commonIndices {
+		if v == len(headersInGroup) {
+			return k, nil
+		}
+	}
+
+	return 0, fmt.Errorf("unable to determine index for group containing %#v", headersInGroup)
 }
