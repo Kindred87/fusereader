@@ -50,7 +50,7 @@ func Test_headerGroupIndices(t *testing.T) {
 		want   []int
 	}{
 		{name: "RECORD TYPE", header: "RECORD TYPE", want: []int{1}},
-		{name: "Width", header: "Width", want: []int{1336, 2559}},
+		{name: "Width", header: "Width", want: []int{1335, 2558}},
 	}
 
 	for _, test := range tests {
@@ -132,6 +132,53 @@ func Test_headerGroupRootIndex(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("headerGroupRootIndex() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_buildHeaderCaches(t *testing.T) {
+	type args struct {
+		files []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{name: "all files", args: args{files: fuseTestFiles}, wantErr: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := buildHeaderCaches(tt.args.files); (err != nil) != tt.wantErr {
+				t.Errorf("buildHeaderCaches() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_headersAreShared(t *testing.T) {
+	fileHeaders, err := assembleHeaders(fuseTestFiles)
+	assert.Nil(t, err)
+
+	bogusHeaders := fileHeaders[0][2000:]
+	bogusHeaders = append(bogusHeaders, fileHeaders[0][0:2000]...)
+
+	type args struct {
+		headers [][]string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{name: "all files", args: args{headers: fileHeaders}, want: true},
+		{name: "all files and bogus headers", args: args{headers: append(fileHeaders, bogusHeaders)}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := headersAreShared(tt.args.headers); got != tt.want {
+				t.Errorf("headersAreShared() = %v, want %v", got, tt.want)
 			}
 		})
 	}

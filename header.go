@@ -22,10 +22,12 @@ const (
 
 var (
 	headerIndexCache map[string]map[string]int
+	headerCache      map[string]map[string][]int // headerCache contains the header caches for one or more files.  If all files share the same header indices, then the first map key will be the value of sharedHeaderCacheKey.
 )
 
 const (
-	headerRowMax = 5 // headerRowMax describes the maximum number of rows by which the header row should have been found.
+	sharedHeaderCacheKey = "shared" // sharedHeaderCacheKey is used as the file key for the header cache in situations where all files contain share the same header indices.
+	headerRowMax         = 5        // headerRowMax describes the maximum number of rows by which the header row should have been found.
 )
 
 func cacheHeaders(file string, headers []string) {
@@ -93,6 +95,85 @@ func headerRowPrefix() []string {
 	out = append(out, headerItemID)
 
 	return out
+}
+
+// buildHeaderCaches creates a cache of the headers in the given files used by
+// header index calculation functions.
+func buildHeaderCaches(files []string) error {
+	headers, err := assembleHeaders(files)
+	if err != nil {
+		return err // Deliberately unwrapped.
+	}
+
+	headerCache = make(map[string]map[string][]int)
+
+	if headersAreShared(headers) {
+		headerCache[sharedHeaderCacheKey] = make(map[string][]int)
+
+		for i, header := range headers[0] {
+			headerCache[sharedHeaderCacheKey][header] = append(headerCache[sharedHeaderCacheKey][header], i)
+		}
+
+	} else {
+		for i, file := range files {
+			headerCache[file] = make(map[string][]int)
+
+			for j, header := range headers[i] {
+				headerCache[file][header] = append(headerCache[file][header], j)
+			}
+		}
+	}
+
+	return nil
+}
+
+// assembleHeaders returns a slice containing the headers for all of the given files.
+func assembleHeaders(files []string) ([][]string, error) {
+	headers := make([][]string, len(files))
+
+	for i, file := range files {
+		fi, err := excelize.OpenFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("error while opening %s: %w", filepath.Base(file), err)
+		}
+
+		h, err := headersFrom(fi)
+		if err != nil {
+			return nil, fmt.Errorf("error while getting headers from %s: %w", filepath.Base(file), err)
+		}
+
+		headers[i] = h
+	}
+
+	return headers, nil
+}
+
+// headersAreShared returns true if all of the given headers are identical.
+func headersAreShared(headers [][]string) bool {
+	for _, h := range headers[1:] {
+		if len(h) != len(headers[0]) {
+			return false
+		}
+	}
+
+	for _, h := range headers[1:] {
+		for i, header := range h {
+			if header != headers[0][i] {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// removeHeaderCaches empties the header caches for garbage collection.
+func removeHeaderCaches() {
+	for k := range headerCache {
+		headerCache[k] = nil
+	}
+
+	headerCache = nil
 }
 
 // headersFrom returns the contents of the header row in the given file.
