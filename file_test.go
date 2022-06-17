@@ -46,29 +46,8 @@ func Test_getFile(t *testing.T) {
 	}
 }
 
-func Test_cacheFiles(t *testing.T) {
-	type args struct {
-		paths []string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{name: "Basic", args: args{paths: fuseTestFiles}, wantErr: false},
-		{name: "Bogus path", args: args{paths: []string{"foo.xlsx"}}, wantErr: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := cacheFiles(tt.args.paths); (err != nil) != tt.wantErr {
-				t.Errorf("cacheFiles() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func Test_closeFiles(t *testing.T) {
-	err := cacheFiles(fuseTestFiles)
+	_, err := cacheFiles(fuseTestFiles)
 	assert.Nil(t, err)
 
 	tests := []struct {
@@ -81,6 +60,33 @@ func Test_closeFiles(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := closeFiles(); (err != nil) != tt.wantErr {
 				t.Errorf("closeFiles() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_cacheFiles(t *testing.T) {
+	type args struct {
+		paths []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    []*excelize.File
+		wantErr bool
+	}{
+		{name: "Basic", args: args{paths: fuseTestFiles}, wantErr: false},
+		{name: "Bogus path", args: args{paths: []string{"foo.xlsx"}}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := cacheFiles(tt.args.paths)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("cacheFiles() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.want != nil && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("cacheFiles() = %v, want %v", got, tt.want)
 			}
 		})
 	}

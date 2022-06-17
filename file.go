@@ -25,15 +25,30 @@ func getFile(path string) (*excelize.File, error) {
 	return fo, nil
 }
 
-// cacheFiles caches the file pointers for the given files.
-func cacheFiles(paths []string) error {
+// getAllFiles returns all of the cached files.
+func getAllFiles() ([]*excelize.File, error) {
+	if fileCache == nil {
+		return nil, fmt.Errorf("the file cache is nil")
+	}
+
+	var out []*excelize.File
+
+	for _, v := range fileCache {
+		out = append(out, v)
+	}
+
+	return out, nil
+}
+
+// cacheFiles caches the file pointers for the given files and returns them.
+func cacheFiles(paths []string) ([]*excelize.File, error) {
 	if len(paths) == 0 {
-		return fmt.Errorf("no paths were given")
+		return nil, fmt.Errorf("no paths were given")
 	}
 
 	err := cacheFile(paths[0])
 	if err != nil {
-		return fmt.Errorf("error while caching %s: %w", filepath.Base(paths[0]), err)
+		return nil, fmt.Errorf("error while caching %s: %w", filepath.Base(paths[0]), err)
 	}
 
 	var eg errgroup.Group
@@ -44,10 +59,15 @@ func cacheFiles(paths []string) error {
 	}
 
 	if err := eg.Wait(); err != nil {
-		return fmt.Errorf("error while caching files: %w", err)
+		return nil, fmt.Errorf("error while caching files: %w", err)
 	}
 
-	return nil
+	cachedFiles, err := getAllFiles()
+	if err != nil {
+		return nil, fmt.Errorf("error while getting cached files: %w", err)
+	}
+
+	return cachedFiles, nil
 }
 
 // cacheFiles caches the file pointer for the given file.
