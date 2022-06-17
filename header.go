@@ -67,8 +67,7 @@ func headerRowPrefix() []string {
 	return out
 }
 
-// buildHeaderCaches creates a cache of the headers in the given files used by
-// header index calculation functions.
+// buildHeaderCaches creates a cache of the headers in the given files used by header index calculation functions.
 func buildHeaderCaches(files ...*excelize.File) error {
 	if len(files) == 0 {
 		return fmt.Errorf("no files were given")
@@ -172,8 +171,8 @@ func headersAreShared(headers [][]string) bool {
 	return true
 }
 
-// buildHeaderGroupRootCache creates a cache of header group root indices for the given key for
-// the main header index cache.
+// buildHeaderGroupRootCache creates a cache of header group root indices for the given key for the main header
+// index cache.
 func buildHeaderGroupRootCache(cacheKey string) error {
 	if _, exist := headerCache[cacheKey]; !exist {
 		return fmt.Errorf("the key %s does not exist in the header cache", cacheKey)
@@ -234,7 +233,8 @@ func headerIndex(file, keyHeader string, otherHeadersInGroup []string) (int, err
 	return 0, fmt.Errorf("unable to determine index for %s in group containing %#v", keyHeader, otherHeadersInGroup)
 }
 
-// headerGroupRootIndex returns the zero-based index of the root of the group containing the given headers from the given file.
+// headerGroupRootIndex returns the zero-based index of the root of the group containing the given headers from the
+// given file.
 func headerGroupRootIndex(file string, headersInGroup []string) (int, error) {
 	if headerCache == nil {
 		return 0, fmt.Errorf("header cache is nil")
@@ -285,8 +285,8 @@ func headerGroupRootIndex(file string, headersInGroup []string) (int, error) {
 	return 0, fmt.Errorf("unable to determine index for group containing %#v", headersInGroup)
 }
 
-// headerGroupRootIndices returns the group root indices that the given header belongs to, within the header
-// cache of the given key.
+// headerGroupRootIndices returns the group root indices that the given header belongs to, within the header cache
+// of the given key.
 func headerGroupRootIndices(cacheKey string, header string) ([]int, error) {
 	var indices []int
 
