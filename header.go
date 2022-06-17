@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/emirpasic/gods/trees/avltree"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -21,45 +22,14 @@ const (
 )
 
 var (
-	headerIndexCache map[string]map[string]int
-	headerCache      map[string]map[string][]int // headerCache contains the header caches for one or more files.  If all files share the same header indices, then the first map key will be the value of sharedHeaderCacheKey.
+	headerCache          map[string]map[string][]int // headerCache contains the header index caches for one or more files.  If all files share the same header indices, then the first map key will be the value of sharedHeaderCacheKey.
+	headerGroupRootCache map[string]*avltree.Tree    // headerGroupRootCache stores the header group roots for each file within a binary tree.
 )
 
 const (
 	sharedHeaderCacheKey = "shared" // sharedHeaderCacheKey is used as the file key for the header cache in situations where all files contain share the same header indices.
 	headerRowMax         = 5        // headerRowMax describes the maximum number of rows by which the header row should have been found.
 )
-
-func cacheHeaders(file string, headers []string) {
-	if headerIndexCache == nil {
-		headerIndexCache = make(map[string]map[string]int)
-	}
-
-	headerIndexCache[file] = make(map[string]int)
-
-	for i, header := range headers {
-		headerIndexCache[file][header] = i
-	}
-}
-
-func indexForHeader(needle string, haystack []string) (int, bool) {
-	for i, header := range haystack {
-		if header == needle {
-			return i, true
-		}
-	}
-
-	return 0, false
-}
-
-func valueForHeader(header, file string, haystack []string) (string, bool) {
-	index, exist := headerIndexCache[file][header]
-	if !exist || index >= len(haystack) {
-		return "", false
-	}
-
-	return haystack[index], true
-}
 
 // isHeaderRow returns true if the given slice contains the prefix expected in a FUSE header row.
 func isHeaderRow(s []string) bool {
@@ -99,10 +69,14 @@ func headerRowPrefix() []string {
 
 // buildHeaderCaches creates a cache of the headers in the given files used by
 // header index calculation functions.
-func buildHeaderCaches(files []string) error {
+func buildHeaderCaches(files ...string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("no files were given")
+	}
+
 	headers, err := assembleHeaders(files)
 	if err != nil {
-		return err // Deliberately unwrapped.
+		return err
 	}
 
 	headerCache = make(map[string]map[string][]int)
@@ -114,12 +88,20 @@ func buildHeaderCaches(files []string) error {
 			headerCache[sharedHeaderCacheKey][header] = append(headerCache[sharedHeaderCacheKey][header], i)
 		}
 
+		if err = buildHeaderGroupRootCache(sharedHeaderCacheKey); err != nil {
+			return fmt.Errorf("error while building header group root cache for shared headers: %w", err)
+		}
+
 	} else {
 		for i, file := range files {
 			headerCache[file] = make(map[string][]int)
 
 			for j, header := range headers[i] {
 				headerCache[file][header] = append(headerCache[file][header], j)
+			}
+
+			if err = buildHeaderGroupRootCache(file); err != nil {
+				return fmt.Errorf("error while building header group root cache for %s: %w", filepath.Base(file), err)
 			}
 		}
 	}
@@ -146,34 +128,6 @@ func assembleHeaders(files []string) ([][]string, error) {
 	}
 
 	return headers, nil
-}
-
-// headersAreShared returns true if all of the given headers are identical.
-func headersAreShared(headers [][]string) bool {
-	for _, h := range headers[1:] {
-		if len(h) != len(headers[0]) {
-			return false
-		}
-	}
-
-	for _, h := range headers[1:] {
-		for i, header := range h {
-			if header != headers[0][i] {
-				return false
-			}
-		}
-	}
-
-	return true
-}
-
-// removeHeaderCaches empties the header caches for garbage collection.
-func removeHeaderCaches() {
-	for k := range headerCache {
-		headerCache[k] = nil
-	}
-
-	headerCache = nil
 }
 
 // headersFrom returns the contents of the header row in the given file.
@@ -204,51 +158,106 @@ func headersFrom(file *excelize.File) ([]string, error) {
 	return nil, fmt.Errorf("could not locate header row in %s", filepath.Base(file.Path))
 }
 
-// headerGroupIndices returns a map of the given headers and the beginning index for the group/s they belong to.
-func headerGroupIndices(headers []string) (map[string][]int, error) {
-	indices := make(map[string][]int)
-
-	groupRoot := 1
-
-	for i, header := range headers {
-		if header == headerNewGroupIndicator {
-			groupRoot = i
+// headersAreShared returns true if all of the given headers are identical.
+func headersAreShared(headers [][]string) bool {
+	for _, h := range headers[1:] {
+		if len(h) != len(headers[0]) {
+			return false
 		}
-
-		indices[header] = append(indices[header], groupRoot)
 	}
 
-	return indices, nil
+	for _, h := range headers[1:] {
+		for i, header := range h {
+			if header != headers[0][i] {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// buildHeaderGroupRootCache creates a cache of header group root indices for the given key for
+// the main header index cache.
+func buildHeaderGroupRootCache(cacheKey string) error {
+	if _, exist := headerCache[cacheKey]; !exist {
+		return fmt.Errorf("the key %s does not exist in the header cache", cacheKey)
+	}
+
+	if headerGroupRootCache == nil {
+		headerGroupRootCache = make(map[string]*avltree.Tree)
+	}
+
+	tree := avltree.NewWithIntComparator()
+
+	for _, index := range headerCache[cacheKey][headerNewGroupIndicator] {
+		tree.Put(index, index)
+	}
+
+	headerGroupRootCache[cacheKey] = tree
+	return nil
+}
+
+// removeHeaderCaches empties the header caches for garbage collection.
+func removeHeaderCaches() {
+	for k := range headerCache {
+		headerCache[k] = nil
+	}
+
+	headerCache = nil
+
+	for k := range headerGroupRootCache {
+		headerGroupRootCache[k].Clear()
+	}
+
+	headerGroupRootCache = nil
 }
 
 // headerGroupIndex returns the zero-based index of the given key header.
-func headerIndex(headerRow []string, keyHeader string, otherHeadersInGroup []string) (int, error) {
-	groupIndices, err := headerGroupIndices(headerRow)
-	if err != nil {
-		return 0, fmt.Errorf("error while getting header group indices: %w", err)
+func headerIndex(file, keyHeader string, otherHeadersInGroup []string) (int, error) {
+	if _, exist := headerCache[sharedHeaderCacheKey]; exist {
+		file = sharedHeaderCacheKey
 	}
 
-	root, err := headerGroupRootIndex(groupIndices, append(otherHeadersInGroup, keyHeader))
+	root, err := headerGroupRootIndex(file, append(otherHeadersInGroup, keyHeader))
 	if err != nil {
 		return 0, fmt.Errorf("error while getting index of group root for %s and %#v: %w", keyHeader, otherHeadersInGroup, err)
 	}
 
-	for i := root; i < len(headerRow); i++ {
-		if headerRow[i] == keyHeader {
-			return i, nil
-		}
+	tree := avltree.NewWithIntComparator()
+
+	for _, index := range headerCache[file][keyHeader] {
+		tree.Put(index, index)
+	}
+
+	v, found := tree.Ceiling(root)
+	tree.Clear()
+	if found {
+		return v.Key.(int), nil
 	}
 
 	return 0, fmt.Errorf("unable to determine index for %s in group containing %#v", keyHeader, otherHeadersInGroup)
 }
 
-// headerGroupRootIndex returns the zero-based index of the root of the group containing the key header
-func headerGroupRootIndex(groupIndices map[string][]int, headersInGroup []string) (int, error) {
+// headerGroupRootIndex returns the zero-based index of the root of the group containing the given headers from the given file.
+func headerGroupRootIndex(file string, headersInGroup []string) (int, error) {
+	if headerCache == nil {
+		return 0, fmt.Errorf("header cache is nil")
+	} else if headerGroupRootCache == nil {
+		return 0, fmt.Errorf("header group root cache is nil")
+	}
+
+	if _, exist := headerCache[sharedHeaderCacheKey]; exist {
+		file = sharedHeaderCacheKey
+	} else if _, exist := headerCache[file]; !exist {
+		return 0, fmt.Errorf("file %s does not exist in the header cache", filepath.Base(file))
+	}
+
 	commonIndices := make(map[int]int)
 
 	for i, header := range headersInGroup {
-		indices, exist := groupIndices[header]
-		if !exist {
+		indices, err := headerGroupRootIndices(file, header)
+		if err != nil {
 			return 0, fmt.Errorf("could not locate %s among the given headers", header)
 		}
 
@@ -279,4 +288,21 @@ func headerGroupRootIndex(groupIndices map[string][]int, headersInGroup []string
 	}
 
 	return 0, fmt.Errorf("unable to determine index for group containing %#v", headersInGroup)
+}
+
+// headerGroupRootIndices returns the group root indices that the given header belongs to, within the header
+// cache of the given key.
+func headerGroupRootIndices(cacheKey string, header string) ([]int, error) {
+	var indices []int
+
+	for _, index := range headerCache[cacheKey][header] {
+		node, found := headerGroupRootCache[cacheKey].Floor(index)
+		if !found {
+			return nil, fmt.Errorf("could not locate group root for %s at index %d", header, index)
+		}
+
+		indices = append(indices, node.Key.(int))
+	}
+
+	return indices, nil
 }
