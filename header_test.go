@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/xuri/excelize/v2"
 )
 
 func Test_isHeaderRow(t *testing.T) {
@@ -35,15 +36,19 @@ func Test_headerRowPrefix(t *testing.T) {
 }
 
 func Test_buildHeaderCaches(t *testing.T) {
+	cachedFiles, err := cacheFiles(fuseTestFiles)
+	defer closeFiles()
+	assert.Nil(t, err)
+
 	type args struct {
-		files []string
+		files []*excelize.File
 	}
 	tests := []struct {
 		name    string
 		args    args
 		wantErr bool
 	}{
-		{name: "all files", args: args{files: fuseTestFiles}, wantErr: false},
+		{name: "all files", args: args{files: cachedFiles}, wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -55,7 +60,11 @@ func Test_buildHeaderCaches(t *testing.T) {
 }
 
 func Test_headersAreShared(t *testing.T) {
-	fileHeaders, err := assembleHeaders(fuseTestFiles)
+	cachedFiles, err := cacheFiles(fuseTestFiles)
+	defer closeFiles()
+	assert.Nil(t, err)
+
+	fileHeaders, err := assembleHeaders(cachedFiles)
 	assert.Nil(t, err)
 
 	bogusHeaders := fileHeaders[0][2000:]
@@ -82,7 +91,11 @@ func Test_headersAreShared(t *testing.T) {
 }
 
 func Test_headerIndex(t *testing.T) {
-	err := buildHeaderCaches(fuseTestFiles[0])
+	cachedFiles, err := cacheFiles([]string{fuseTestFiles[0]})
+	defer closeFiles()
+	assert.Nil(t, err)
+
+	err = buildHeaderCaches(cachedFiles...)
 	defer removeHeaderCaches()
 	assert.Nil(t, err)
 
@@ -114,7 +127,11 @@ func Test_headerIndex(t *testing.T) {
 }
 
 func Test_headerGroupRootIndex(t *testing.T) {
-	err := buildHeaderCaches(fuseTestFiles[0])
+	cachedFiles, err := cacheFiles(fuseTestFiles)
+	defer closeFiles()
+	assert.Nil(t, err)
+
+	err = buildHeaderCaches(cachedFiles[0])
 	defer removeHeaderCaches()
 	assert.Nil(t, err)
 

@@ -69,7 +69,7 @@ func headerRowPrefix() []string {
 
 // buildHeaderCaches creates a cache of the headers in the given files used by
 // header index calculation functions.
-func buildHeaderCaches(files ...string) error {
+func buildHeaderCaches(files ...*excelize.File) error {
 	if len(files) == 0 {
 		return fmt.Errorf("no files were given")
 	}
@@ -94,14 +94,14 @@ func buildHeaderCaches(files ...string) error {
 
 	} else {
 		for i, file := range files {
-			headerCache[file] = make(map[string][]int)
+			headerCache[file.Path] = make(map[string][]int)
 
 			for j, header := range headers[i] {
-				headerCache[file][header] = append(headerCache[file][header], j)
+				headerCache[file.Path][header] = append(headerCache[file.Path][header], j)
 			}
 
-			if err = buildHeaderGroupRootCache(file); err != nil {
-				return fmt.Errorf("error while building header group root cache for %s: %w", filepath.Base(file), err)
+			if err = buildHeaderGroupRootCache(file.Path); err != nil {
+				return fmt.Errorf("error while building header group root cache for %s: %w", filepath.Base(file.Path), err)
 			}
 		}
 	}
@@ -110,18 +110,13 @@ func buildHeaderCaches(files ...string) error {
 }
 
 // assembleHeaders returns a slice containing the headers for all of the given files.
-func assembleHeaders(files []string) ([][]string, error) {
+func assembleHeaders(files []*excelize.File) ([][]string, error) {
 	headers := make([][]string, len(files))
 
 	for i, file := range files {
-		fi, err := excelize.OpenFile(file)
+		h, err := headersFrom(file)
 		if err != nil {
-			return nil, fmt.Errorf("error while opening %s: %w", filepath.Base(file), err)
-		}
-
-		h, err := headersFrom(fi)
-		if err != nil {
-			return nil, fmt.Errorf("error while getting headers from %s: %w", filepath.Base(file), err)
+			return nil, fmt.Errorf("error while getting headers from %s: %w", filepath.Base(file.Path), err)
 		}
 
 		headers[i] = h
