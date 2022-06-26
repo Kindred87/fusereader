@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	headerCache          map[string]map[string][]int // headerCache contains the header index caches for one or more files.  If all files share the same header indices, then the first map key will be the value of sharedHeaderCacheKey.
+	headerCache          map[string]map[string][]int // headerCache contains the header index caches for one or more files.  If all files share the same header indices, then the key used will be the value of sharedHeaderCacheKey.
 	headerGroupRootCache map[string]*avltree.Tree    // headerGroupRootCache stores the header group roots for each file within a binary tree.
 )
 
@@ -183,6 +183,7 @@ func buildHeaderGroupRootCache(cacheKey string) error {
 	}
 
 	tree := avltree.NewWithIntComparator()
+	tree.Put(-1, -1) // Because the very first group starts at index 0.
 
 	for _, index := range headerCache[cacheKey][headerNewGroupIndicator] {
 		tree.Put(index, index)
@@ -207,7 +208,7 @@ func removeHeaderCaches() {
 	headerGroupRootCache = nil
 }
 
-// headerGroupIndex returns the zero-based index of the given key header.
+// headerIndex returns the zero-based index of the given key header.
 func headerIndex(file, keyHeader string, otherHeadersInGroup []string) (int, error) {
 	if _, exist := headerCache[sharedHeaderCacheKey]; exist {
 		file = sharedHeaderCacheKey
