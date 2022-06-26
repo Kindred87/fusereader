@@ -39,17 +39,17 @@ func readWorker(file string, parseIfMatches FieldSpecification, parseBuffer chan
 	var emptyRows int = 0
 	var currentRow int = 0
 	var cells []string
-	var itemCache [][]string
-	var itemCacheRow int
 	var parseItem bool = false
+	var itemCacheRow int
+	var itemCache [][]string
 
 	for rows.Next() {
-
-		currentRow++
 
 		if emptyRows > emptyRowMax {
 			break
 		}
+
+		currentRow++
 
 		cells, err = rows.Columns()
 		if err != nil {
