@@ -36,19 +36,14 @@ func readWorker(file string, parseIfMatches FieldSpecification, parseBuffer chan
 		return fmt.Errorf("error while getting row iterator for %s: %w", filepath.Base(file), err)
 	}
 
-	var emptyRows int = 0
 	var currentRow int = 0
 	var cells []string
+	var emptyRows int = 0
 	var parseItem bool = false
 	var itemCacheRow int
 	var itemCache [][]string
 
 	for rows.Next() {
-
-		if emptyRows > emptyRowMax {
-			break
-		}
-
 		currentRow++
 
 		cells, err = rows.Columns()
@@ -63,6 +58,10 @@ func readWorker(file string, parseIfMatches FieldSpecification, parseBuffer chan
 			emptyRows++
 		} else {
 			emptyRows = 0
+		}
+
+		if emptyRows > emptyRowMax {
+			break
 		}
 
 		if parseIfMatches.Match(cells[keyHeaderIndex]) {
