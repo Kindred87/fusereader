@@ -50,7 +50,7 @@ type Field struct {
 }
 
 func GetFields(files []string, locate []FieldLocation, retrieve []FieldRetrieval, readBuffer chan Field, opts ...Option) (err error) {
-	if err := verifyParametersForCaching(files, locate, retrieve, readBuffer); err != nil {
+	if err := validateParametersForCaching(files, locate, retrieve, readBuffer); err != nil {
 		return fmt.Errorf("error while validating parameters: %w", err)
 	}
 	defer func() {
@@ -66,7 +66,7 @@ func GetFields(files []string, locate []FieldLocation, retrieve []FieldRetrieval
 		return fmt.Errorf("error while building caches: %w", err)
 	}
 
-	if err := verifyParametersForSearching(files, locate, retrieve); err != nil {
+	if err := validateParametersForSearching(files, locate, retrieve); err != nil {
 		return fmt.Errorf("error while validating parameters: %w", err)
 	}
 
@@ -100,9 +100,9 @@ func buildCaches(files []string) error {
 	return nil
 }
 
-// verifyParametersForCaching returns a non-nil error if it detects a fatal error with the given parameters in regards
+// validateParametersForCaching returns a non-nil error if it detects a fatal error with the given parameters in regards
 // to building file and header caches.
-func verifyParametersForCaching(files []string, locate []FieldLocation, retrieve []FieldRetrieval, readBuffer chan Field) error {
+func validateParametersForCaching(files []string, locate []FieldLocation, retrieve []FieldRetrieval, readBuffer chan Field) error {
 	if len(files) == 0 {
 		return fmt.Errorf("no files were given")
 	} else if len(locate) == 0 {
@@ -116,9 +116,9 @@ func verifyParametersForCaching(files []string, locate []FieldLocation, retrieve
 	return nil
 }
 
-// verifyParametersForSearching returns a non-nil error if it detects a fatal error with the given parameters in regards
+// validateParametersForSearching returns a non-nil error if it detects a fatal error with the given parameters in regards
 // to performing a search.
-func verifyParametersForSearching(files []string, locate []FieldLocation, retrieve []FieldRetrieval) error {
+func validateParametersForSearching(files []string, locate []FieldLocation, retrieve []FieldRetrieval) error {
 	if err := verifyFieldLocations(locate, files); err != nil {
 		return err
 	}
