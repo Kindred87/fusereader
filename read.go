@@ -85,7 +85,7 @@ func readWorker(file string, locate FieldLocation, parseBuffer chan [][]string) 
 
 		if locate.Field.Matches(cells[keyHeaderIndex]) {
 			locate.Field.matchCount++
-			if uint(locate.Field.matchCount) >= locate.Field.OnMatch {
+			if locate.Field.matchCount >= locate.Field.OnMatch {
 				parseItem = true
 			}
 		}
