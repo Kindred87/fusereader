@@ -13,7 +13,7 @@ const (
 
 // parseWorker identifies matching items in the given parse buffer and sends retrieved fields to the given retrieval buffer.
 //
-// The given file should match the file being read by the function sending over the parse buffer.
+// The given file should match the file being read by the function sending into the parse buffer.
 func parseWorker(file string, locate []FieldLocation, retrieve []FieldRetrieval, parseBuffer chan [][]string, retrieveBuffer chan Field) error {
 	for {
 		select {
@@ -40,7 +40,7 @@ func parseWorker(file string, locate []FieldLocation, retrieve []FieldRetrieval,
 	}
 }
 
-// parseMatch returns true if fields contains fields specified by the given the contents of find.
+// parseMatch returns true if fields contains fields specified by the contents of find.
 func parseMatch(filename string, fields [][]string, find []FieldLocation) (bool, error) {
 	indexCache := make(map[string]int)
 	specIndices := make(map[string]int)
