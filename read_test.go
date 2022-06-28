@@ -10,24 +10,30 @@ import (
 
 func Test_readWorker(t *testing.T) {
 	cacheFile(fuseTestFiles[0])
+	defer closeFiles()
 
 	fi, err := getFile(fuseTestFiles[0])
 	assert.Nil(t, err)
 
 	err = buildHeaderCaches(fi)
+	defer removeHeaderCaches()
 	assert.Nil(t, err)
 
-	validSpec := FieldSpecification{
-		ID:                "Valid",
-		KeyHeader:         headerItemID,
-		InGroupContaining: []string{headerItemType},
-		Match:             func(s string) bool { return s == "00046015128797" },
-		OnNMatches:        1,
+	validSpec := FieldLocation{
+		ID: "Valid",
+		Header: HeaderSpecification{
+			Key:           headerItemID,
+			OthersInGroup: []string{headerItemType},
+		},
+		Field: FieldSpecification{
+			Matches: func(s string) bool { return s == "00046015128797" },
+			OnMatch: 1,
+		},
 	}
 
 	type args struct {
 		file           string
-		parseIfMatches FieldSpecification
+		parseIfMatches FieldLocation
 		parseBuffer    chan [][]string
 	}
 	tests := []struct {
@@ -77,10 +83,10 @@ func consumeBuffer(c chan [][]string, checkFor ...FieldSpecification) {
 
 // checkBuffer returns a non-nil error if the channel receives items that do not match
 // the given field specification.
-func checkBuffer(c chan [][]string, file string, checkFor FieldSpecification) error {
-	keyHeaderIndex, err := headerIndex(file, checkFor.KeyHeader, checkFor.InGroupContaining)
+func checkBuffer(c chan [][]string, file string, checkFor FieldLocation) error {
+	keyHeaderIndex, err := headerIndex(file, checkFor.Header.Key, checkFor.Header.OthersInGroup, checkFor.Header.OnMatch)
 	if err != nil {
-		return fmt.Errorf("error while getting header index for header %s in %s: %w", checkFor.KeyHeader, file, err)
+		return fmt.Errorf("error while getting header index for header %s in %s: %w", checkFor.Header.Key, file, err)
 	}
 
 	foundNeedle := false
@@ -93,10 +99,10 @@ func checkBuffer(c chan [][]string, file string, checkFor FieldSpecification) er
 		}
 
 		for _, row := range v {
-			if keyHeaderIndex < len(row) && checkFor.Match(row[keyHeaderIndex]) {
-				checkFor.matches++
+			if keyHeaderIndex < len(row) && checkFor.Field.Matches(row[keyHeaderIndex]) {
+				checkFor.Field.matchCount++
 
-				if checkFor.matches == int(checkFor.OnNMatches) {
+				if checkFor.Field.matchCount == int(checkFor.Field.OnMatch) {
 					foundNeedle = true
 				}
 			}

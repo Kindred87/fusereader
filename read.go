@@ -13,7 +13,7 @@ const (
 
 // readWorker reads items in the given file, sending items containing values matching the given specification to the parse
 // buffer.
-func readWorker(file string, parseIfMatches FieldSpecification, parseBuffer chan [][]string) error {
+func readWorker(file string, locate FieldLocation, parseBuffer chan [][]string) error {
 	defer close(parseBuffer)
 
 	fi, err := getFile(file)
@@ -21,12 +21,12 @@ func readWorker(file string, parseIfMatches FieldSpecification, parseBuffer chan
 		return fmt.Errorf("error while getting file pointer for %s: %w", filepath.Base(file), err)
 	}
 
-	keyHeaderIndex, err := headerIndex(file, parseIfMatches.KeyHeader, parseIfMatches.InGroupContaining)
+	keyHeaderIndex, err := headerIndex(file, locate.Header.Key, locate.Header.OthersInGroup, locate.Header.OnMatch)
 	if err != nil {
-		return fmt.Errorf("error while determining key header index for FieldSpecification %s: %w", parseIfMatches.ID, err)
+		return fmt.Errorf("error while determining key header index for FieldSpecification %s: %w", locate.ID, err)
 	}
 
-	recordTypeIndex, err := headerIndex(file, headerRecordType, []string{headerOperation})
+	recordTypeIndex, err := headerIndex(file, headerRecordType, []string{headerOperation}, 1)
 	if err != nil {
 		return fmt.Errorf("error while determining index of header %s: %w", headerRecordType, err)
 	}
@@ -64,19 +64,15 @@ func readWorker(file string, parseIfMatches FieldSpecification, parseBuffer chan
 			break
 		}
 
-		if parseIfMatches.Match(cells[keyHeaderIndex]) {
-			parseIfMatches.matches++
-			if parseIfMatches.OnNMatches == uint(parseIfMatches.matches) {
-				parseItem = true
-			}
-		}
-
 		if cells[recordTypeIndex] == itemRecordType {
 			if parseItem {
 				parseItem = false
 
+				var t [][]string
+				t = append(t, itemCache[:itemCacheRow+1]...)
+
 				select {
-				case parseBuffer <- itemCache[:itemCacheRow+1]:
+				case parseBuffer <- t:
 				case <-time.After(parseBufferSendTimeout):
 					return fmt.Errorf("reader for %s timed out on row %d while waiting to send to parse buffer", filepath.Base(file), currentRow)
 				}
@@ -85,6 +81,13 @@ func readWorker(file string, parseIfMatches FieldSpecification, parseBuffer chan
 			itemCacheRow = 0
 		} else {
 			itemCacheRow++
+		}
+
+		if locate.Field.Matches(cells[keyHeaderIndex]) {
+			locate.Field.matchCount++
+			if uint(locate.Field.matchCount) >= locate.Field.OnMatch {
+				parseItem = true
+			}
 		}
 
 		if itemCacheRow >= len(itemCache) {
