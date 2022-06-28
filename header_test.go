@@ -103,6 +103,7 @@ func Test_headerIndex(t *testing.T) {
 		file                string
 		keyHeader           string
 		otherHeadersInGroup []string
+		matchOn             int
 	}
 	tests := []struct {
 		name    string
@@ -114,7 +115,7 @@ func Test_headerIndex(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := headerIndex(tt.args.file, tt.args.keyHeader, tt.args.otherHeadersInGroup)
+			got, err := headerIndex(tt.args.file, tt.args.keyHeader, tt.args.otherHeadersInGroup, tt.args.matchOn)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("headerIndex() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -138,6 +139,7 @@ func Test_headerGroupRootIndex(t *testing.T) {
 	type args struct {
 		file           string
 		headersInGroup []string
+		matchOn        int
 	}
 	tests := []struct {
 		name    string
@@ -145,17 +147,56 @@ func Test_headerGroupRootIndex(t *testing.T) {
 		want    int
 		wantErr bool
 	}{
-		{name: "Width", args: args{file: fuseTestFiles[0], headersInGroup: []string{"Width", "Trade Item Composition Width UOM"}}, want: 1335, wantErr: false},
+		{name: "Width", args: args{file: fuseTestFiles[0], headersInGroup: []string{"Width", "Trade Item Composition Width UOM"}, matchOn: 1}, want: 1335, wantErr: false},
+		{name: "Allergen first", args: args{file: fuseTestFiles[0], headersInGroup: []string{"Allergen Type Code", "Level Of Containment"}, matchOn: 1}, want: 48, wantErr: false},
+		{name: "Allergen first with N 0", args: args{file: fuseTestFiles[0], headersInGroup: []string{"Allergen Type Code", "Level Of Containment"}, matchOn: 0}, want: 48, wantErr: false},
+		{name: "Allergen first with N -1", args: args{file: fuseTestFiles[0], headersInGroup: []string{"Allergen Type Code", "Level Of Containment"}, matchOn: -1}, want: 48, wantErr: false},
+		{name: "Allergen second", args: args{file: fuseTestFiles[0], headersInGroup: []string{"Allergen Type Code", "Level Of Containment"}, matchOn: 2}, want: 683, wantErr: false},
+		{name: "Allergen third", args: args{file: fuseTestFiles[0], headersInGroup: []string{"Allergen Type Code", "Level Of Containment"}, matchOn: 3}, want: 2324, wantErr: false},
+		{name: "Allergen fourth", args: args{file: fuseTestFiles[0], headersInGroup: []string{"Allergen Type Code", "Level Of Containment"}, matchOn: 4}, want: 0, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := headerGroupRootIndex(tt.args.file, tt.args.headersInGroup)
+			got, err := headerGroupRootIndex(tt.args.file, tt.args.headersInGroup, tt.args.matchOn)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("headerGroupRootIndex() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
 				t.Errorf("headerGroupRootIndex() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_headerCountIn(t *testing.T) {
+	files, err := cacheFiles(fuseTestFiles)
+	assert.Nil(t, err)
+
+	err = buildHeaderCaches(files...)
+	assert.Nil(t, err)
+
+	type args struct {
+		file string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    int
+		wantErr bool
+	}{
+		{name: "First file", args: args{file: fuseTestFiles[0]}, want: 8154, wantErr: false},
+		{name: "Invalid file", args: args{file: "foo file.xlsx"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := headerCountIn(tt.args.file)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("headerCountIn() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("headerCountIn() = %v, want %v", got, tt.want)
 			}
 		})
 	}

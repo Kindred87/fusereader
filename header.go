@@ -209,12 +209,14 @@ func removeHeaderCaches() {
 }
 
 // headerIndex returns the zero-based index of the given key header.
-func headerIndex(file, keyHeader string, otherHeadersInGroup []string) (int, error) {
+//
+// matchOn is used in situations where multiple header groups are located to specify which group will be referenced.  With <=1 specifying the first match.
+func headerIndex(file, keyHeader string, otherHeadersInGroup []string, matchOn int) (int, error) {
 	if _, exist := headerCache[sharedHeaderCacheKey]; exist {
 		file = sharedHeaderCacheKey
 	}
 
-	root, err := headerGroupRootIndex(file, append(otherHeadersInGroup, keyHeader))
+	root, err := headerGroupRootIndex(file, append(otherHeadersInGroup, keyHeader), matchOn)
 	if err != nil {
 		return 0, fmt.Errorf("error while getting index of group root for %s and %#v: %w", keyHeader, otherHeadersInGroup, err)
 	}
@@ -236,7 +238,9 @@ func headerIndex(file, keyHeader string, otherHeadersInGroup []string) (int, err
 
 // headerGroupRootIndex returns the zero-based index of the root of the group containing the given headers from the
 // given file.
-func headerGroupRootIndex(file string, headersInGroup []string) (int, error) {
+//
+// matchOn is used in situations where multiple header groups are located to specify which group will be referenced.  With <=1 specifying the first match.
+func headerGroupRootIndex(file string, headersInGroup []string, matchOn int) (int, error) {
 	if headerCache == nil {
 		return 0, fmt.Errorf("header cache is nil")
 	} else if headerGroupRootCache == nil {
@@ -249,7 +253,7 @@ func headerGroupRootIndex(file string, headersInGroup []string) (int, error) {
 		return 0, fmt.Errorf("file %s does not exist in the header cache", filepath.Base(file))
 	}
 
-	commonIndices := make(map[int]int)
+	commonIndices := avltree.NewWithIntComparator()
 
 	for i, header := range headersInGroup {
 		indices, err := headerGroupRootIndices(file, header)
@@ -263,13 +267,18 @@ func headerGroupRootIndex(file string, headersInGroup []string) (int, error) {
 		}
 
 		for _, index := range indices {
-			if _, exist := commonIndices[index]; exist {
+			if _, exist := commonIndices.Get(index); exist {
 				matched = true
 			} else {
-				commonIndices[index] = 0
+				commonIndices.Put(index, 0)
 			}
 
-			commonIndices[index]++
+			n := commonIndices.GetNode(index)
+			v, _ := n.Value.(int)
+			v++
+
+			commonIndices.Remove(index)
+			commonIndices.Put(index, v)
 		}
 
 		if !matched {
@@ -277,9 +286,18 @@ func headerGroupRootIndex(file string, headersInGroup []string) (int, error) {
 		}
 	}
 
-	for k, v := range commonIndices {
-		if v == len(headersInGroup) {
-			return k, nil
+	matches := 0
+	for _, k := range commonIndices.Keys() {
+		n := commonIndices.GetNode(k)
+		v, _ := n.Value.(int)
+
+		if v == 2 {
+			matches++
+		}
+
+		if matches >= matchOn {
+			keyAsInt, _ := k.(int)
+			return keyAsInt, nil
 		}
 	}
 
@@ -301,4 +319,21 @@ func headerGroupRootIndices(cacheKey string, header string) ([]int, error) {
 	}
 
 	return indices, nil
+}
+
+// headerCountIn returns the number of headers in the given file.
+//
+// If the given file is not already cached, an error will be returned.
+func headerCountIn(file string) (int, error) {
+	f, err := getFile(file)
+	if err != nil {
+		return 0, fmt.Errorf("error while getting pointer for %s: %w", filepath.Base(file), err)
+	}
+
+	headers, err := headersFrom(f)
+	if err != nil {
+		return 0, fmt.Errorf("error while getting headers from %s: %w", filepath.Base(file), err)
+	}
+
+	return len(headers), nil
 }
