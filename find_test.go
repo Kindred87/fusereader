@@ -1,72 +1,135 @@
 package fusereader
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/sync/errgroup"
 )
 
-func TestLocationOf(t *testing.T) {
-	file, row, err := itemLocation("00046015128797", fuseTestFiles)
-
+func TestGetFieldsForRetrievedValue(t *testing.T) {
+	files, err := cacheFiles(fuseTestFiles)
+	defer closeFiles()
 	assert.Nil(t, err)
 
-	assert.Equal(t, "testdata/fuse01.xlsx", file)
-	assert.Equal(t, 25, row)
+	err = buildHeaderCaches(files...)
+	defer removeHeaderCaches()
+	assert.Nil(t, err)
+
+	c := make(chan Field, 10)
+
+	var eg errgroup.Group
+
+	eg.Go(func() error { return checkFieldBuffer(c, "FREE_FROM -- Free from") })
+
+	err = GetFields([]string{fuseTestFiles[0]}, []FieldLocation{validFieldLocation()}, []FieldRetrieval{validRetrieveSpec()}, c)
+	assert.Nil(t, err)
+
+	close(c)
+
+	err = eg.Wait()
+	assert.Nil(t, err)
 }
 
-func Test_itemLocation(t *testing.T) {
+func checkFieldBuffer(buf chan Field, value string) error {
+	for {
+		v, ok := <-buf
+		if !ok {
+			break
+		}
+
+		if v.Value != value {
+			return fmt.Errorf("expected %s, got %s for spec %s", value, v.Value, v.SpecID)
+		}
+	}
+
+	return nil
+}
+
+func TestGetFields(t *testing.T) {
 	type args struct {
-		itemID string
-		files  []string
-		opts   []Option
+		files      []string
+		locate     []FieldLocation
+		retrieve   []FieldRetrieval
+		readBuffer chan Field
+		opts       []Option
 	}
 	tests := []struct {
-		name     string
-		args     args
-		wantFile string
-		wantRow  int
-		wantErr  bool
+		name    string
+		args    args
+		wantErr bool
 	}{
-		{name: "invalid item ID", args: args{itemID: "9999999999999", files: fuseTestFiles}, wantErr: true},
-		{name: "10077661153618", args: args{itemID: "10077661153618", files: fuseTestFiles}, wantFile: fuseTestFiles[0], wantRow: 5348, wantErr: false},
-		{name: "near-match", args: args{itemID: "000460151672841", files: fuseTestFiles}, wantErr: true},
-		{name: "00077661142141", args: args{itemID: "00077661142141", files: fuseTestFiles}, wantFile: fuseTestFiles[1], wantRow: 9236, wantErr: false},
-		{name: "00077661004128", args: args{itemID: "00077661004128", files: fuseTestFiles}, wantFile: fuseTestFiles[2], wantRow: 2545, wantErr: false},
+		{name: "No retrieve spec", args: args{files: []string{fuseTestFiles[0]}, locate: []FieldLocation{validFieldLocation()}}, wantErr: true},
+		{name: "No locate spec", args: args{files: []string{fuseTestFiles[0]}, retrieve: []FieldRetrieval{validRetrieveSpec()}}, wantErr: true},
+		{name: "Bad file", args: args{files: []string{"bad_file.xlsx"}, locate: []FieldLocation{validFieldLocation()}, retrieve: []FieldRetrieval{validRetrieveSpec()}}, wantErr: true},
+		{name: "Negative offset", args: args{files: []string{fuseTestFiles[0]}, locate: []FieldLocation{validFieldLocation()}, retrieve: []FieldRetrieval{validRetrieveSpecOverrideOffsets([]int{-2000})}}, wantErr: true},
+		{name: "Out of range offset", args: args{files: []string{fuseTestFiles[0]}, locate: []FieldLocation{validFieldLocation()}, retrieve: []FieldRetrieval{validRetrieveSpecOverrideOffsets([]int{20000})}}, wantErr: true},
+		{name: "Invalid header", args: args{files: []string{fuseTestFiles[0]}, locate: []FieldLocation{validFindSpecKeyHeaderOverride("Foo header")}, retrieve: []FieldRetrieval{validRetrieveSpec()}}, wantErr: true},
 	}
 	for _, tt := range tests {
+		c := make(chan Field)
+		tt.args.readBuffer = c
+		go consumeRetrievalBuffer(c)
+
 		t.Run(tt.name, func(t *testing.T) {
-			gotFile, gotRow, err := itemLocation(tt.args.itemID, tt.args.files, tt.args.opts...)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("itemLocation() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if gotFile != tt.wantFile {
-				t.Errorf("itemLocation() gotFile = %v, want %v", gotFile, tt.wantFile)
-			}
-			if gotRow != tt.wantRow {
-				t.Errorf("itemLocation() gotRow = %v, want %v", gotRow, tt.wantRow)
+			if err := GetFields(tt.args.files, tt.args.locate, tt.args.retrieve, tt.args.readBuffer, tt.args.opts...); (err != nil) != tt.wantErr {
+				t.Errorf("GetFields() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestGetFields(t *testing.T) {
-	find := FieldSpecification{
-		Headers:           []string{headerItemID},
-		InGroupContaining: []string{headerItemID},
-		Match:             func(s string) bool { return s == "00011110603081" },
+func consumeRetrievalBuffer(c chan Field) {
+	for {
+		_, ok := <-c
+
+		if !ok {
+			break
+		}
 	}
+}
 
-	retrieve := FieldSpecification{
-		Headers:           []string{"Allergen Type Code"},
-		InGroupContaining: []string{"Level of Containment"},
-		Match:             func(s string) bool { return strings.Contains(s, "Soybean") },
+func validFieldLocation() FieldLocation {
+	return FieldLocation{
+		ID: "Location spec 01",
+		Header: HeaderSpecification{
+			Key:           headerItemID,
+			OthersInGroup: []string{headerItemID},
+			OnMatch:       1,
+		},
+		Field: FieldSpecification{
+			Matches: func(s string) bool { return s == "00011110603081" },
+		},
 	}
+}
 
-	c := make(chan Field, 10)
+func validFindSpecKeyHeaderOverride(h string) FieldLocation {
+	s := validFieldLocation()
+	s.Header.Key = h
 
-	err := GetFields([]string{fuseTestFiles[0]}, []FieldSpecification{find}, []FieldSpecification{retrieve}, c)
-	assert.Nil(t, err)
+	return s
+}
+
+func validRetrieveSpec() FieldRetrieval {
+	return FieldRetrieval{
+		ID: "Retrieve spec 01",
+		Header: HeaderSpecification{
+			Key:           "Allergen Type Code",
+			OthersInGroup: []string{"Level Of Containment"},
+			OnMatch:       1,
+		},
+		Field: FieldSpecification{
+			Matches: func(s string) bool { return strings.Contains(s, "Soybean") },
+		},
+		FieldOffsets: []int{1},
+	}
+}
+
+func validRetrieveSpecOverrideOffsets(o []int) FieldRetrieval {
+	f := validRetrieveSpec()
+	f.FieldOffsets = o
+
+	return f
 }
