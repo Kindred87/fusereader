@@ -119,20 +119,20 @@ func validateParametersForCaching(files []string, locate []FieldLocation, retrie
 // validateParametersForSearching returns a non-nil error if it detects a fatal error with the given parameters in regards
 // to performing a search.
 func validateParametersForSearching(files []string, locate []FieldLocation, retrieve []FieldRetrieval) error {
-	if err := verifyFieldLocations(locate, files); err != nil {
+	if err := validateFieldLocations(locate, files); err != nil {
 		return err
 	}
 
-	if err := verifyFieldRetrievals(retrieve, files); err != nil {
+	if err := validateFieldRetrievals(retrieve, files); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// verifyFieldLocations returns a non-nil error if it detects a fatal error with the given field specs in regards
+// validateFieldLocations returns a non-nil error if it detects a fatal error with the given field specs in regards
 // to performing a search.
-func verifyFieldLocations(locate []FieldLocation, files []string) error {
+func validateFieldLocations(locate []FieldLocation, files []string) error {
 	for _, l := range locate {
 		for _, file := range files {
 			_, err := headerIndex(file, l.Header.Key, l.Header.OthersInGroup, l.Header.OnMatch)
@@ -145,9 +145,9 @@ func verifyFieldLocations(locate []FieldLocation, files []string) error {
 	return nil
 }
 
-// verifyFieldRetrievals returns a non-nil error if it detects a fatal error with the given field retrievals in regards
+// validateFieldRetrievals returns a non-nil error if it detects a fatal error with the given field retrievals in regards
 // to performing a search.
-func verifyFieldRetrievals(retrieve []FieldRetrieval, files []string) error {
+func validateFieldRetrievals(retrieve []FieldRetrieval, files []string) error {
 	headerCounts := make(map[string]int)
 
 	for _, file := range files {
