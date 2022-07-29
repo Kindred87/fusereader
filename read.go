@@ -13,7 +13,7 @@ const (
 
 // readWorker reads items in the given file, sending items containing values matching the given specification to the parse
 // buffer.
-func readWorker(file string, locate FieldLocation, parseBuffer chan [][]string) error {
+func readWorker(file string, locate FieldLocation, parseBuffer chan parseTarget) error {
 	defer close(parseBuffer)
 
 	fi, err := getFile(file)
@@ -68,8 +68,10 @@ func readWorker(file string, locate FieldLocation, parseBuffer chan [][]string) 
 			if parseItem {
 				parseItem = false
 
-				var t [][]string
-				t = append(t, itemCache[:itemCacheRow+1]...)
+				t := parseTarget{}
+				t.file = file
+				t.beginningRow = currentRow - len(itemCache[:itemCacheRow+1])
+				t.rowContents = append(t.rowContents, itemCache[:itemCacheRow+1]...)
 
 				select {
 				case parseBuffer <- t:
