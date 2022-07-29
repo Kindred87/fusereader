@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
+
+	"github.com/xuri/excelize/v2"
 )
 
 const (
@@ -11,10 +13,17 @@ const (
 	retrieveBufferSendTimeout = time.Millisecond * 2000
 )
 
+// parseTarget contains item information for consumption by parsing functions.
+type parseTarget struct {
+	file         string     // file is the filename of the originating spreadsheet that rowContents was read from.
+	beginningRow int        // beginningRow is the first row in the originating spreadsheet that rowContents was read from.
+	rowContents  [][]string // rowContents are the rows for a particular item as read from the spreadsheet.
+}
+
 // parseWorker identifies matching items in the given parse buffer and sends retrieved fields to the given retrieval buffer.
 //
 // The given file should match the file being read by the function sending into the parse buffer.
-func parseWorker(file string, locate []FieldLocation, retrieve []FieldRetrieval, parseBuffer chan [][]string, retrieveBuffer chan Field) error {
+func parseWorker(file string, locate []FieldLocation, retrieve []FieldRetrieval, parseBuffer chan parseTarget, retrieveBuffer chan field) error {
 	for {
 		select {
 		case v, ok := <-parseBuffer:
@@ -41,7 +50,7 @@ func parseWorker(file string, locate []FieldLocation, retrieve []FieldRetrieval,
 }
 
 // parseMatch returns true if fields contains fields specified by the contents of find.
-func parseMatch(filename string, fields [][]string, find []FieldLocation) (bool, error) {
+func parseMatch(filename string, target parseTarget, find []FieldLocation) (bool, error) {
 	indexCache := make(map[string]int)
 	specIndices := make(map[string]int)
 
@@ -55,7 +64,7 @@ func parseMatch(filename string, fields [][]string, find []FieldLocation) (bool,
 		specIndices[spec.ID] = i
 	}
 
-	for _, row := range fields {
+	for _, row := range target.rowContents {
 		for specID, index := range indexCache {
 			if len(row) <= index {
 				continue
@@ -76,19 +85,19 @@ func parseMatch(filename string, fields [][]string, find []FieldLocation) (bool,
 }
 
 // parseRetrieve retrieves values specified by retrieve and sends them over the given buffer.
-func parseRetrieve(filename string, fields [][]string, retrieve []FieldRetrieval, buffer chan Field) error {
-	fieldToSend := Field{}
+func parseRetrieve(filename string, target parseTarget, retrieve []FieldRetrieval, buffer chan field) error {
+	fieldToSend := field{}
 
 	index, err := headerIndex(filename, headerItemID, []string{headerOperation}, 1)
 	if err != nil {
 		return fmt.Errorf("error while getting index for header %s in %s: %w", headerItemID, filepath.Base(filename), err)
 	}
 
-	if len(fields[0]) < index {
+	if len(target.rowContents[0]) < index {
 		return fmt.Errorf("length of first row for item in %s is less than the index of the header %s", filepath.Base(filename), headerItemID)
 	}
 
-	fieldToSend.ItemID = fields[0][index]
+	fieldToSend.SetItemID(target.rowContents[0][index])
 
 	specIndices := make(map[string]int)
 	indexCache := make(map[string]int)
@@ -104,7 +113,7 @@ func parseRetrieve(filename string, fields [][]string, retrieve []FieldRetrieval
 		indexCache[r.ID] = index
 	}
 
-	for _, row := range fields {
+	for i, row := range target.rowContents {
 		for specID, specIndex := range specIndices {
 			if len(row) <= indexCache[specID] {
 				continue
@@ -114,11 +123,20 @@ func parseRetrieve(filename string, fields [][]string, retrieve []FieldRetrieval
 				retrieve[specIndex].Field.matchCount++
 
 				if retrieve[specIndex].Field.matchCount >= int(retrieve[specIndex].Field.OnMatch) {
-					fieldToSend.Header = retrieve[specIndex].Header.Key
-					fieldToSend.SpecID = retrieve[specIndex].ID
+					fieldToSend.SetFile(target.file)
+
+					fieldToSend.SetHeader(retrieve[specIndex].Header.Key)
+					fieldToSend.SetSpecID(retrieve[specIndex].ID)
 
 					for _, offset := range retrieve[specIndex].FieldOffsets {
-						fieldToSend.Value = row[indexCache[specID]+offset]
+						fieldToSend.SetValue(row[indexCache[specID]+offset])
+
+						a, err := excelize.CoordinatesToCellName(indexCache[specID]+offset+1, target.beginningRow+i)
+						if err != nil {
+							return fmt.Errorf("error while converting column %d and row %d to a cell name: %w", indexCache[specID]+offset, target.beginningRow, err)
+						}
+
+						fieldToSend.SetAddress(a)
 
 						select {
 						case buffer <- fieldToSend:
