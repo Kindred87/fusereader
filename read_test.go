@@ -34,7 +34,7 @@ func Test_readWorker(t *testing.T) {
 	type args struct {
 		file           string
 		parseIfMatches FieldLocation
-		parseBuffer    chan [][]string
+		parseBuffer    chan parseTarget
 	}
 	tests := []struct {
 		name          string
@@ -49,13 +49,13 @@ func Test_readWorker(t *testing.T) {
 	var eg errgroup.Group
 
 	for _, tt := range tests {
-		c := make(chan [][]string)
+		c := make(chan parseTarget)
 
 		tt.args.parseBuffer = c
 		if tt.consumeBuffer {
 			go consumeBuffer(c)
 		} else if tt.checkBuffer {
-			eg.Go(func() error { return checkBuffer(c, tt.args.file, tt.args.parseIfMatches) })
+			eg.Go(func() error { return checkBufferRowContents(c, tt.args.file, tt.args.parseIfMatches) })
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,7 +71,7 @@ func Test_readWorker(t *testing.T) {
 }
 
 // consumeBuffer continuously empties the given buffer until it is closed.
-func consumeBuffer(c chan [][]string, checkFor ...FieldSpecification) {
+func consumeBuffer(c chan parseTarget, checkFor ...FieldSpecification) {
 	for {
 		_, ok := <-c
 
@@ -81,9 +81,9 @@ func consumeBuffer(c chan [][]string, checkFor ...FieldSpecification) {
 	}
 }
 
-// checkBuffer returns a non-nil error if the channel receives items that do not match
+// checkBufferRowContents returns a non-nil error if the channel receives items that do not match
 // the given field specification.
-func checkBuffer(c chan [][]string, file string, checkFor FieldLocation) error {
+func checkBufferRowContents(c chan parseTarget, file string, checkFor FieldLocation) error {
 	keyHeaderIndex, err := headerIndex(file, checkFor.Header.Key, checkFor.Header.OthersInGroup, checkFor.Header.OnMatch)
 	if err != nil {
 		return fmt.Errorf("error while getting header index for header %s in %s: %w", checkFor.Header.Key, file, err)
@@ -98,7 +98,7 @@ func checkBuffer(c chan [][]string, file string, checkFor FieldLocation) error {
 			break
 		}
 
-		for _, row := range v {
+		for _, row := range v.rowContents {
 			if keyHeaderIndex < len(row) && checkFor.Field.Matches(row[keyHeaderIndex]) {
 				checkFor.Field.matchCount++
 
@@ -113,4 +113,67 @@ func checkBuffer(c chan [][]string, file string, checkFor FieldLocation) error {
 	}
 
 	return nil
+}
+
+func Test_readworker_for_beginning_row(t *testing.T) {
+	cacheFile(fuseTestFiles[0])
+	defer closeFiles()
+
+	fi, err := getFile(fuseTestFiles[0])
+	assert.Nil(t, err)
+
+	err = buildHeaderCaches(fi)
+	defer removeHeaderCaches()
+	assert.Nil(t, err)
+
+	fieldLocations := []FieldLocation{
+		{ID: "00011110603081", Header: HeaderSpecification{Key: "Item ID", OthersInGroup: []string{"Item Type"}}, Field: FieldSpecification{Matches: func(s string) bool { return s == "00011110603081" }}},
+		{ID: "10011110603088", Header: HeaderSpecification{Key: "Item ID", OthersInGroup: []string{"Item Type"}}, Field: FieldSpecification{Matches: func(s string) bool { return s == "10011110603088" }}},
+		{ID: "00077661003169", Header: HeaderSpecification{Key: "Item ID", OthersInGroup: []string{"Item Type"}}, Field: FieldSpecification{Matches: func(s string) bool { return s == "00077661003169" }}},
+	}
+
+	tests := []struct {
+		name                 string
+		fieldLocation        FieldLocation
+		expectedBeginningRow int
+	}{
+		{name: "00011110603081", fieldLocation: fieldLocations[0], expectedBeginningRow: 4},
+		{name: "10011110603088", fieldLocation: fieldLocations[1], expectedBeginningRow: 23},
+		{name: "00077661003169", fieldLocation: fieldLocations[2], expectedBeginningRow: 8595},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := make(chan parseTarget)
+			var eg errgroup.Group
+
+			eg.Go(func() error { return readWorker(fuseTestFiles[0], tt.fieldLocation, c) })
+			eg.Go(func() error { return checkBufferBeginningRow(c, tt.expectedBeginningRow) })
+
+			err := eg.Wait()
+			assert.Nil(t, err)
+		})
+	}
+}
+
+func checkBufferBeginningRow(c chan parseTarget, checkFor int) error {
+	foundNeedle := false
+
+	for {
+		v, ok := <-c
+
+		if !ok {
+			break
+		}
+
+		if v.beginningRow == checkFor {
+			foundNeedle = true
+		}
+	}
+
+	if foundNeedle {
+		return nil
+	}
+
+	return fmt.Errorf("did not locate %d", checkFor)
 }
