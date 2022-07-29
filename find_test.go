@@ -18,11 +18,11 @@ func TestGetFieldsForRetrievedValue(t *testing.T) {
 	defer removeHeaderCaches()
 	assert.Nil(t, err)
 
-	c := make(chan Field, 10)
+	c := make(chan field, 10)
 
 	var eg errgroup.Group
 
-	eg.Go(func() error { return checkFieldBuffer(c, "FREE_FROM -- Free from") })
+	eg.Go(func() error { return checkFieldBuffer(c, "FREE_FROM -- Free from", "AY9", fuseTestFiles[0]) })
 
 	err = GetFields([]string{fuseTestFiles[0]}, []FieldLocation{validFieldLocation()}, []FieldRetrieval{validRetrieveSpec()}, c)
 	assert.Nil(t, err)
@@ -33,15 +33,19 @@ func TestGetFieldsForRetrievedValue(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func checkFieldBuffer(buf chan Field, value string) error {
+func checkFieldBuffer(buf chan field, value string, address string, file string) error {
 	for {
 		v, ok := <-buf
 		if !ok {
 			break
 		}
 
-		if v.Value != value {
-			return fmt.Errorf("expected %s, got %s for spec %s", value, v.Value, v.SpecID)
+		if v.Value() != value {
+			return fmt.Errorf("expected %s, got %s for spec %s", value, v.Value(), v.SpecID())
+		} else if v.Address() != address {
+			return fmt.Errorf("expected %s, got %s for spec %s", address, v.Address(), v.SpecID())
+		} else if v.File() != file {
+			return fmt.Errorf("expected %s, got %s for spec %s", file, v.File(), v.SpecID())
 		}
 	}
 
@@ -53,7 +57,7 @@ func TestGetFields(t *testing.T) {
 		files      []string
 		locate     []FieldLocation
 		retrieve   []FieldRetrieval
-		readBuffer chan Field
+		readBuffer chan field
 		opts       []Option
 	}
 	tests := []struct {
@@ -69,7 +73,7 @@ func TestGetFields(t *testing.T) {
 		{name: "Invalid header", args: args{files: []string{fuseTestFiles[0]}, locate: []FieldLocation{validFindSpecKeyHeaderOverride("Foo header")}, retrieve: []FieldRetrieval{validRetrieveSpec()}}, wantErr: true},
 	}
 	for _, tt := range tests {
-		c := make(chan Field)
+		c := make(chan field)
 		tt.args.readBuffer = c
 		go consumeRetrievalBuffer(c)
 
@@ -81,7 +85,7 @@ func TestGetFields(t *testing.T) {
 	}
 }
 
-func consumeRetrievalBuffer(c chan Field) {
+func consumeRetrievalBuffer(c chan field) {
 	for {
 		_, ok := <-c
 
